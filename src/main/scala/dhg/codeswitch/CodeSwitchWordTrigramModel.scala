@@ -1,14 +1,14 @@
 package dhg.codeswitch
 
-import dhg.util._
+import dhg.util.math.LogDouble
 import scala.Vector
 import scala.collection.mutable.{ Map => MMap }
 import scala.collection.mutable.{ Buffer => MSeq }
 
 class CodeSwitchWordTrigramModel(
-  languageModels: Vector[(LanguageModel, Double)],
+  languageModels: Vector[(LanguageModel, LogDouble)],
   wordN: Int,
-  verbose: Boolean = true) {
+  verbose: Boolean = false) {
   import NgramModel._
 
   //for ((lm, prior) <- languageModels) require(lm.n == charN) // all models must have the same `n`
@@ -20,7 +20,7 @@ class CodeSwitchWordTrigramModel(
   def decode(words: Vector[String]): Vector[Int] = {
     val words2 = words :+ "<E>"
     import collection.mutable.{ Map => MMap }
-    val p: Vector[MMap[(Int, Int), Double]] = Vector(MMap((B, B) -> 1.0).withDefaultValue(0.0)) ++ Vector.fill(words.size)(MMap.empty[(Int, Int), Double])
+    val p: Vector[MMap[(Int, Int), LogDouble]] = Vector(MMap((B, B) -> LogDouble.one).withDefaultValue(LogDouble.zero)) ++ Vector.fill(words.size)(MMap.empty[(Int, Int), LogDouble])
     val bp: Vector[MMap[(Int, Int), Int]] = Vector.fill(words.size + 1)(MMap.empty[(Int, Int), Int])
     for (k <- 1 to words.length) {
       if (verbose) println(f"k=$k")
@@ -37,12 +37,12 @@ class CodeSwitchWordTrigramModel(
           if (verbose) print(f"${f"p($k,u=$u,v=$v) = "}%-15s" + f"max { ")
           val options = K.flatMap { w =>
             val x = words2(k - 1) // really words(k) ...
-            val ps = p(k - 1).getOrElse((w, u), 0.0)
+            val ps = p(k - 1).getOrElse((w, u), LogDouble.zero)
             val qs = t(Vector(w, u), v)
             val es = e(v, x)
             val score = ps * qs * es
-            if (score > 0.0) {
-              if (verbose) print(f"${f"p(${k - 1},w=$w,u=$u)=$ps"}%-10s * ${f"t(w=$w,u=$u > v=$v)=$qs"}%-18s * ${f"e(v=$v, x=$x)=$es"}%-15s  = $score    ,    ")
+            if (verbose) print(f"${f"p(${k - 1},w=$w,u=$u)=$ps"}%-10s * ${f"t(w=$w,u=$u > v=$v)=$qs"}%-18s * ${f"e(v=$v, x=$x)=$es"}%-15s  = $score    ,    ")
+            if (score > LogDouble.zero) {
               Some(w -> score)
             }
             else None
@@ -57,18 +57,18 @@ class CodeSwitchWordTrigramModel(
             if (verbose) println(f" }  = ")
           }
         }
-      println
+      if(verbose)println
     }
 
     if (verbose) println("\nBackwards:")
     if (verbose) println(f"bp=$bp")
     val y = MSeq.fill(words.size - (wordN - 1))(-1) ++ {
       (for {
-        u <- K.drop(1)
+        u <- K
         v <- K.drop(1)
       } yield {
-        Vector(u, v) -> p(words.size).getOrElse((u, v), 0.0) // * t(Vector(w, u), E)
-      }).maxBy(_._2)._1
+        Vector(u, v) -> p(words.size).getOrElse((u, v), LogDouble.zero) // * t(Vector(w, u), E)
+      }).maxBy(_._2)._1.takeRight(words.size)
     }
     for (k <- (0 to (words.size - (wordN - 0))).reverse) {
       if (verbose) println(f"k=$k")
@@ -82,21 +82,21 @@ class CodeSwitchWordTrigramModel(
     y.toVector
   }
 
-  private[this] val trHistoryLengthWeight = geometricDist(wordN + 1, 0.5)
+  private[this] val trHistoryLengthWeight = geometricDist(wordN + 1, 0.5).map(LogDouble(_))
 
   /**
    * Probability of transitioning to language `x`, given language context `ctx`.
    * Probability is calculated based on the number of `x`s in a row leading
    * up to this token.
    */
-  def t(ctx: Vector[Int], x: Int): Double = {
+  def t(ctx: Vector[Int], x: Int): LogDouble = {
     val history = ctx.reverse.takeWhile(_ == x).size
     trHistoryLengthWeight(history)
   }
 
   def e(v: Int, x: String) = {
     val (lm, prior) = languageModels(v)
-    lm.stringProb(x) * prior
+    LogDouble(lm.stringProb(x)) * prior
   }
 
 }
@@ -108,8 +108,8 @@ object CodeSwitchWordTrigramModel {
     val lms = Vector(
       //      "english" -> (NgramModel.buildInterpolatedNgramModel("this is a sentence".split("\\s+").toVector, 2, 0.01, 26), 0.5),
       //      "french" -> (NgramModel.buildInterpolatedNgramModel("these are a sentences".split("\\s+").toVector, 2, 0.01, 26), 0.5))
-      "english" -> (NgramModel.buildNgramModel("this is a sentence".split("\\s+").toVector, 3, 0.01, 26), 0.5),
-      "french" -> (NgramModel.buildNgramModel("these are a sentences".split("\\s+").toVector, 3, 0.01, 26), 0.5))
+      "english" -> (NgramModel.buildNgramModel("this is a sentence".split("\\s+").toVector, 3, 0.01, 26), LogDouble(0.5)),
+      "french" -> (NgramModel.buildNgramModel("these are a sentences".split("\\s+").toVector, 3, 0.01, 26), LogDouble(0.5)))
     val cslm = new CodeSwitchWordTrigramModel(lms.map(_._2), 3)
     //val input = "thes ise a sentences".split("\\s+").toVector
     val input = "this are sentence sentences these are indeed".split("\\s+").toVector

@@ -6,6 +6,7 @@ import dhg.util.StringUtil._
 import dhg.util.Pattern._
 import scalaz._
 import Scalaz._
+import dhg.util.math.LogDouble
 
 object Evaluation {
 
@@ -16,8 +17,8 @@ object Evaluation {
 
   def main(args: Array[String]): Unit = {
     val lms = Vector(
-      "english" -> (buildModelFromCorpusFile("lmdata/en.txt"), 0.5),
-      "spanish" -> (buildModelFromCorpusFile("lmdata/es.txt"), 0.5))
+      ("english", (buildModelFromCorpusFile("lmdata/en.txt"), LogDouble(0.5))),
+      ("spanish", (buildModelFromCorpusFile("lmdata/es.txt"), LogDouble(0.5))))
 
     //    for ((name, (lm, prior)) <- lms) {
     //      println(name)
@@ -34,19 +35,22 @@ object Evaluation {
     //    }
 
     val cslm = new CodeSwitchWordTrigramModel(lms.map(_._2), 3)
-    val eval = new Evaluator("test-data/trialDataEnEswithOffsets.txt", lms.map(_._1))
-    val (correct, total) = eval.data.map { sentence =>
+    val eval = new Evaluator("test-data/en_es_training_offsets.txt", lms.map(_._1))
+    var correct = 0
+    var total = 0
+    eval.data.foreach { sentence =>
       val responses =
         for (((word, guessLangId), gold) <- (sentence.map(_._1) zipSafe cslm.decode(sentence.map(_._1))) zipSafe sentence.map(_._2)) yield {
           val guess = lms.map(_._1).apply(guessLangId)
-          println(f"$word : $guess%-10s $gold%-10s  ${if (gold.forall(_ == guess)) "" else "X"}")
+          //println(f"$word : $guess%-10s $gold%-10s  ${if (gold.forall(_ == guess)) "" else "X"}")
           (gold.exists(_ == guess), gold.isDefined)
         }
-      val correct = responses.count(_._1)
-      val total = responses.count(_._2)
-      println(f"Sentence: ${correct / total.toDouble}  ($correct / $total)\n\n")
-      (correct, total)
-    }.reduce(_ |+| _)
+      val c = responses.count(_._1)
+      val t = responses.count(_._2)
+      println(f"${f"Sentence: ${c / total.toDouble}%.4f  ($c / $t)"}%-50s ${f"Total: ${correct / total.toDouble}%.4f  ($correct / $total)"}")
+      correct += c
+      total += t
+    }
 
     println(f"Final: ${correct / total.toDouble}  ($correct / $total)")
   }
@@ -57,7 +61,7 @@ class Evaluator(
   fn: String = "test-data/trialDataEnEswithOffsets.txt",
   languageNames: Vector[String] = Vector("english", "spanish")) {
 
-  val OffsetRe = "(\\d{18}\t\\d+)\t(\\d+)\t(\\d+)\t(.+)".r
+  val OffsetRe = "(\\d{18}\t\\d+)\t(-?\\d+)\t(-?\\d+)\t(.+)".r
   val Re = "(\\d{18}\t\\d+)\t(.*)".r
   val LangId = "lang(\\d)".r
   def data: Iterator[Vector[(String, Option[String])]] = {
@@ -76,7 +80,7 @@ class Evaluator(
         case Re(id, text) if text != "Not Found" =>
           for {
             (start, end, lang) <- offsetMap(id)
-            if start < text.length && end < text.length
+            if start >= 0 && start < text.length && end >= 0 && end < text.length
           } yield {
             val langName = lang match {
               case LangId(UInt(n)) => Some(languageNames(n - 1))
