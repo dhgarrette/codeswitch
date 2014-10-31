@@ -8,7 +8,7 @@ import scala.collection.mutable.{ Buffer => MSeq }
 class CodeSwitchWordTrigramModel(
   languageModels: Vector[(LanguageModel, LogDouble)],
   wordN: Int,
-  verbose: Boolean = false) {
+  verbose: Boolean = true) {
   import NgramModel._
 
   //for ((lm, prior) <- languageModels) require(lm.n == charN) // all models must have the same `n`
@@ -20,8 +20,8 @@ class CodeSwitchWordTrigramModel(
   def decode(words: Vector[String]): Vector[Int] = {
     val words2 = words :+ "<E>"
     import collection.mutable.{ Map => MMap }
-    val p: Vector[MMap[(Int, Int), LogDouble]] = Vector(MMap((B, B) -> LogDouble.one).withDefaultValue(LogDouble.zero)) ++ Vector.fill(words.size)(MMap.empty[(Int, Int), LogDouble])
-    val bp: Vector[MMap[(Int, Int), Int]] = Vector.fill(words.size + 1)(MMap.empty[(Int, Int), Int])
+    val p: Vector[MMap[Vector[Int], LogDouble]] = Vector(MMap(Vector.fill(wordN - 1)(B) -> LogDouble.one).withDefaultValue(LogDouble.zero)) ++ Vector.fill(words.size)(MMap.empty[Vector[Int], LogDouble])
+    val bp: Vector[MMap[Vector[Int], Int]] = Vector.fill(words.size + 1)(MMap.empty[Vector[Int], Int])
     for (k <- 1 to words.length) {
       if (verbose) println(f"k=$k")
       if (verbose) println(f"p=$p")
@@ -37,7 +37,7 @@ class CodeSwitchWordTrigramModel(
           if (verbose) print(f"${f"p($k,u=$u,v=$v) = "}%-15s" + f"max { ")
           val options = K.flatMap { w =>
             val x = words2(k - 1) // really words(k) ...
-            val ps = p(k - 1).getOrElse((w, u), LogDouble.zero)
+            val ps = p(k - 1).getOrElse(Vector(w, u), LogDouble.zero)
             val qs = t(Vector(w, u), v)
             val es = e(v, x)
             val score = ps * qs * es
@@ -49,15 +49,15 @@ class CodeSwitchWordTrigramModel(
           }
           if (options.nonEmpty) {
             val (maxL, maxLP) = options.maxBy(_._2)
-            p(k)((u, v)) = maxLP
-            bp(k)((u, v)) = maxL
+            p(k)(Vector(u, v)) = maxLP
+            bp(k)(Vector(u, v)) = maxL
             if (verbose) println(f" }  = $maxLP")
           }
           else {
             if (verbose) println(f" }  = ")
           }
         }
-      if(verbose)println
+      if (verbose) println
     }
 
     if (verbose) println("\nBackwards:")
@@ -67,14 +67,15 @@ class CodeSwitchWordTrigramModel(
         u <- K
         v <- K.drop(1)
       } yield {
-        Vector(u, v) -> p(words.size).getOrElse((u, v), LogDouble.zero) // * t(Vector(w, u), E)
+        Vector(u, v) -> p(words.size).getOrElse(Vector(u, v), LogDouble.zero) // * t(Vector(w, u), E)
       }).maxBy(_._2)._1.takeRight(words.size)
     }
     for (k <- (0 to (words.size - (wordN - 0))).reverse) {
       if (verbose) println(f"k=$k")
       if (verbose) println(f"y=$y")
 
-      y(k) = bp(k + 3)(y(k + 1), y(k + 2))
+      y(k) = bp(k + wordN)(Vector.tabulate(wordN - 1)(i => y(k + i + 1)))
+      //y(k) = bp(k + wordN)(Vector(y(k + 1), y(k + 2)))
       if (verbose) println(f"decode y($k)=${y(k)}")
     }
     if (verbose) println(f"y=$y")
