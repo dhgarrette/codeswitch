@@ -8,6 +8,10 @@ import scalaz._
 import Scalaz._
 import dhg.util.math.LogDouble
 /*
+CodeSwitchWordUnigramModel
+Final: 0.9058641130870954  (99328 / 109650)
+
+-------
 
 CodeSwitchWordNgramModel: charN=5, wordN=3
 Final: 0.9547834017327861  (104692 / 109650)
@@ -52,7 +56,8 @@ object Evaluation {
     //      println(lm.stringProb(w) * prior)
     //    }
 
-    val cslm = new CodeSwitchWordNgramModel(lms.map(_._2), 5)
+    //val cslm = new CodeSwitchWordNgramModel(lms.map(_._2), 2)
+    val cslm = new CodeSwitchWordUnigramModel(lms.map(_._2))
     val eval = new Evaluator("test-data/en_es_training_offsets.txt", lms.map(_._1))
     var correct = 0
     var total = 0

@@ -48,7 +48,7 @@ class CodeSwitchWordNgramModel(
           }
           if (options.nonEmpty) {
             val (maxL, maxLP) = options.maxBy(_._2)
-            p(k).getOrElseUpdate(u.tail :+ v, MMap.empty) += (u.head -> maxLP)
+            p(k).getOrElseUpdate(u.drop(1) :+ v, MMap.empty) += (u.head -> maxLP)
             bp(k)(u :+ v) = maxL
             if (verbose) println(f" }  = $maxLP")
           }
