@@ -7,7 +7,13 @@ import dhg.util.Pattern._
 import scalaz._
 import Scalaz._
 import dhg.util.math.LogDouble
+import dhg.util.Subprocess
 /*
+
+target/start dhg.codeswitch.Evaluation
+
+
+
 CodeSwitchWordUnigramModel
 Final: 0.9058641130870954  (99328 / 109650)
 
@@ -42,40 +48,13 @@ object Evaluation {
       ("english", (buildModelFromCorpusFile("lmdata/en.txt"), LogDouble(0.5))),
       ("spanish", (buildModelFromCorpusFile("lmdata/es.txt"), LogDouble(0.5))))
 
-    //    for ((name, (lm, prior)) <- lms) {
-    //      println(name)
-    //      val w = "sleep"
-    //              println(("0000"+w+"0").sliding(5).map{ ngram =>
-    //                val ctx = ngram.dropRight(1)
-    //                val c = ngram.takeRight(1)
-    //                val p = lm.prob(ctx, c)
-    //                println(f"$ctx $c ${p}")
-    //                p
-    //              }.product)
-    //      println(lm.stringProb(w))
-    //      println(lm.stringProb(w) * prior)
-    //    }
-
-    //val cslm = new CodeSwitchWordNgramModel(lms.map(_._2), 2)
-    val cslm = new CodeSwitchWordUnigramModel(lms.map(_._2))
     val eval = new Evaluator("test-data/en_es_training_offsets.txt", lms.map(_._1))
-    var correct = 0
-    var total = 0
-    eval.data.foreach { sentence =>
-      val responses =
-        for (((word, guessLangId), gold) <- (sentence.map(_._1) zipSafe cslm.decode(sentence.map(_._1))) zipSafe sentence.map(_._2)) yield {
-          val guess = lms.map(_._1).apply(guessLangId)
-          //println(f"$word : $guess%-10s $gold%-10s  ${if (gold.forall(_ == guess)) "" else "X"}")
-          (gold.exists(_ == guess), gold.isDefined)
-        }
-      val c = responses.count(_._1)
-      val t = responses.count(_._2)
-      println(f"${f"Sentence: ${c / total.toDouble}%.4f  ($c / $t)"}%-50s ${f"Total: ${correct / total.toDouble}%.4f  ($correct / $total)"}")
-      correct += c
-      total += t
-    }
+    //val eval = new Evaluator("test-data/trialDataEnEswithOffsets.txt", lms.map(_._1))
 
-    println(f"Final: ${correct / total.toDouble}  ($correct / $total)")
+    val cslm = new CodeSwitchWordNgramModel(lms.map(_._2), 5)
+    //val cslm = new CodeSwitchWordUnigramModel(lms.map(_._2))
+
+    eval.evaluate(cslm)
   }
 
 }
@@ -87,7 +66,7 @@ class Evaluator(
   val OffsetRe = "(\\d{18}\t\\d+)\t(-?\\d+)\t(-?\\d+)\t(.+)".r
   val Re = "(\\d{18}\t\\d+)\t(.*)".r
   val LangId = "lang(\\d)".r
-  def data: Iterator[Vector[(String, Option[String])]] = {
+  def data: Iterator[Vector[(String, Option[String], String, Int, Int)]] = {
     val offsetMap = {
       val m = File(fn.dropRight(3) + "tsv").readLines.map {
         case OffsetRe(id, UInt(start), UInt(end), lang) =>
@@ -98,7 +77,7 @@ class Evaluator(
 
     File(fn).readLines
       .splitWhere(Re.matches(_), KeepDelimiter.KeepDelimiterAsFirst)
-      .map(_.mkString(" ").trim).filter(_.nonEmpty)
+      .map(_.mkString(" ")).filter(_.nonEmpty)
       .collect {
         case Re(id, text) if text != "Not Found" =>
           for {
@@ -109,9 +88,41 @@ class Evaluator(
               case LangId(UInt(n)) => Some(languageNames(n - 1))
               case _ => None
             }
-            (text.substring(start, end + 1).replace("0", "1"), langName)
+            (text.substring(start, end + 1).replace("0", "1"), langName, id, start, end)
           }
       }
+  }
+
+  def evaluateSimple(cslm: CodeSwitchWordNgramModel) = {
+    var correct = 0
+    var total = 0
+    data.foreach { sentence =>
+      val responses =
+        for (((word, gold, _, _, _), guess) <- (sentence zipSafe cslm.decode(sentence.map(_._1)).map(languageNames))) yield {
+          //println(f"$word : $guess%-10s $gold%-10s  ${if (gold.forall(_ == guess)) "" else "X"}")
+          (gold.exists(_ == guess), gold.isDefined)
+        }
+      val c = responses.count(_._1)
+      val t = responses.count(_._2)
+      println(f"${f"Sentence: ${c / t.toDouble}%.4f  ($c / $t)"}%-50s ${f"Total: ${correct / total.toDouble}%.4f  ($correct / $total)"}")
+      correct += c
+      total += t
+    }
+
+    println(f"Final: ${correct / total.toDouble}  ($correct / $total)")
+  }
+
+  def evaluate(cslm: CodeSwitchWordNgramModel) = {
+    writeUsing(File("temp/output.txt")) { w =>
+      data.foreach { sentence =>
+        for (((word, _, id, start, end), guess) <- (sentence zipSafe cslm.decode(sentence.map(_._1)))) yield {
+          //println(f"$word : ${languageNames(guess)}%-10s $gold%-10s  ${if (gold.forall(_ == languageNames(guess))) "" else "X"}")
+          w.writeLine(f"$id\t$start\t$end\tlang${guess + 1}")
+        }
+      }
+    }
+    Subprocess("evaluation-script/Scripts/evaluateOffsets.pl").args(fn.dropRight(3) + "tsv", "temp/output.txt", "temp/eval.txt").call()
+    File("temp/eval.txt").readLines.foreach(println)
   }
 
 }

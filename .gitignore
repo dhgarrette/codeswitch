@@ -20,6 +20,7 @@ project/project/
 target/
 eclipse-bin/
 /bin
+/temp
 
 .cache
 .classpath
