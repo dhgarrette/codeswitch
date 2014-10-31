@@ -7,10 +7,28 @@ import dhg.util.Pattern._
 import scalaz._
 import Scalaz._
 import dhg.util.math.LogDouble
+/*
 
+CodeSwitchWordNgramModel: charN=5, wordN=3
+Final: 0.9547834017327861  (104692 / 109650)
+
+
+CodeSwitchWordNgramModel: charN=3, wordN=4
+Final: 0.9501960784313725  (104189 / 109650)
+
+CodeSwitchWordNgramModel: charN=5, wordN=4
+Final: 0.959671682626539  (105228 / 109650)
+
+CodeSwitchWordNgramModel: charN=6, wordN=4
+Final: 0.9606475148198814  (105335 / 109650)
+
+CodeSwitchWordNgramModel: charN=6, wordN=5
+Final: 0.9610761513907888  (105382 / 109650)
+
+*/
 object Evaluation {
 
-  def buildModelFromCorpusFile(fn: String, n: Int = 5, lambda: Double = 1.0): LanguageModel = {
+  def buildModelFromCorpusFile(fn: String, n: Int = 6, lambda: Double = 1.0): LanguageModel = {
     val data = File(fn).readLines.flatMap(_.splitWhitespace).toVector
     NgramModel.buildInterpolatedNgramModel(data, n, lambda)
   }
@@ -34,7 +52,7 @@ object Evaluation {
     //      println(lm.stringProb(w) * prior)
     //    }
 
-    val cslm = new CodeSwitchWordTrigramModel(lms.map(_._2), 3)
+    val cslm = new CodeSwitchWordNgramModel(lms.map(_._2), 5)
     val eval = new Evaluator("test-data/en_es_training_offsets.txt", lms.map(_._1))
     var correct = 0
     var total = 0
