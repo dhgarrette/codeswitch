@@ -28,6 +28,8 @@ eclipse-bin/
 .settings
 .worksheet
 .pydevproject
+.cache-main
+.cache-test
 
 *.toc
 *.out

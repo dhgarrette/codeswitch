@@ -1,6 +1,6 @@
 package dhg.codeswitch
 
-import dhg.util.math.LogDouble
+import dhg.util._
 import scala.Vector
 import scala.collection.mutable.{ Map => MMap }
 import scala.collection.mutable.{ Buffer => MSeq }

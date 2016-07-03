@@ -1,13 +1,8 @@
 package dhg.codeswitch
 
-import dhg.util.CollectionUtil._
-import dhg.util.FileUtil._
-import dhg.util.StringUtil._
-import dhg.util.Pattern._
+import dhg.util._
 import scalaz._
 import Scalaz._
-import dhg.util.math.LogDouble
-import dhg.util.Subprocess
 /*
 
 target/start dhg.codeswitch.Evaluation
@@ -76,7 +71,7 @@ class Evaluator(
     }
 
     File(fn).readLines
-      .splitWhere(Re.matches(_), KeepDelimiter.KeepDelimiterAsFirst)
+      .splitWhere(Re.matches(_), KeepDelimiterAsFirst)
       .map(_.mkString(" ")).filter(_.nonEmpty)
       .collect {
         case Re(id, text) if text != "Not Found" =>
