@@ -62,7 +62,7 @@ class Evaluator(
   val OffsetRe = "(\\d{18}\t\\d+)\t(-?\\d+)\t(-?\\d+)\t(.+)".r
   val Re = "(\\d{18}\t\\d+)\t(.*)".r
   val LangId = "lang(\\d)".r
-  def data: Iterator[Vector[(String, Option[String], String, Int, Int)]] = {
+  lazy val data: Vector[Vector[(String, Option[String], String, Int, Int)]] = {
     val offsetMap = {
       val m = File(fn.dropRight(3) + "tsv").readLines.map {
         case OffsetRe(id, UInt(start), UInt(end), lang) =>
@@ -70,24 +70,37 @@ class Evaluator(
       }.groupByKey
       m.mapVals(_.sortBy(_._1))
     }
+    // println(offsetMap)
 
     File(fn).readLines
+      .toVector
       .splitWhere(Re.matches(_), KeepDelimiterAsFirst)
       .map(_.mkString(" ")).filter(_.nonEmpty)
       .collect {
-        case Re(id, text) if text != "Not Found" =>
-          for {
-            (start, end, lang) <- offsetMap(id)
-            if start >= 0 && start < text.length && end >= 0 && end < text.length
-          } yield {
+        case Re(id, text) if text != "Not Found" && text.trim.nonEmpty =>
+          val cleanText = text.trim
+                            .replace("&", "&amp;")
+                            .replace("<", "&lt;")
+                            .replace(">", "&gt;")
+          offsetMap(id).flatMap { case (start, end, lang) =>
             val langName = lang match {
               case LangId(UInt(n)) => Some(languageNames(n - 1))
               //case other => Some(other)
               case _ => None
             }
-            (text.substring(start, end + 1).replace("0", "1"), langName, id, start, end)
+
+            //println(s"r: $id  $start $end ${(cleanText+"###################").drop(start).take(end - start + 1).replace("0", "1")}")
+            if (end < cleanText.length) {
+              val word = cleanText.drop(start).take(end - start + 1).replace("0", "1")
+                                .replace("&lt;", "<")
+                                .replace("&gt;", ">")
+                                .replace("&amp;", "&")
+              Some((word, langName, id, start, end))
+            } else {
+              None
+            }
           }
-      }
+      }.toVector
   }
 
   def evaluateSimple(cslm: CodeSwitchWordNgramModel) = {
@@ -125,15 +138,18 @@ class Evaluator(
   def printEvalData() = {
     writeUsing(File("temp/tagged_sentences.txt")) { w =>
       data.foreach { sentence =>
-        w.writeLine(sentence.map { case (word, gold, _, _, _) => 
+        val tokenStrings = sentence.map { case (word, gold, id, start, end) => 
           val goldLang = gold match {
             case Some("english") => "en"
             case Some("spanish") => "es"
             //case Some(other) => other
             case None => "x"
           }
-          s"$word|$goldLang"
-        }.mkString(" "))
+          val modifiedWord = word
+          s"$modifiedWord|$goldLang"
+        }
+        if (!tokenStrings.exists(s => s.contains(" ")))
+        w.writeLine(tokenStrings.map{case s if s.contains(" ") => s"$s****"; case s => s }.mkString(" "))
       }
     }
 
