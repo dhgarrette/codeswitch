@@ -49,6 +49,7 @@ object Evaluation {
     val cslm = new CodeSwitchWordNgramModel(lms.map(_._2), 5)
     //val cslm = new CodeSwitchWordUnigramModel(lms.map(_._2))
 
+    eval.printEvalData()
     eval.evaluate(cslm)
   }
 
@@ -81,6 +82,7 @@ class Evaluator(
           } yield {
             val langName = lang match {
               case LangId(UInt(n)) => Some(languageNames(n - 1))
+              //case other => Some(other)
               case _ => None
             }
             (text.substring(start, end + 1).replace("0", "1"), langName, id, start, end)
@@ -118,6 +120,24 @@ class Evaluator(
     }
     Subprocess("evaluation-script/Scripts/evaluateOffsets.pl").args(fn.dropRight(3) + "tsv", "temp/output.txt", "temp/eval.txt").call()
     File("temp/eval.txt").readLines.foreach(println)
+  }
+
+  def printEvalData() = {
+    writeUsing(File("temp/tagged_sentences.txt")) { w =>
+      data.foreach { sentence =>
+        w.writeLine(sentence.map { case (word, gold, _, _, _) => 
+          val goldLang = gold match {
+            case Some("english") => "en"
+            case Some("spanish") => "es"
+            //case Some(other) => other
+            case None => "x"
+          }
+          s"$word|$goldLang"
+        }.mkString(" "))
+      }
+    }
+
+    println(s"all tags: ${data.flatMap(_.map(_._2.toString)).toVector.distinct.mkString(", ")}")
   }
 
 }
